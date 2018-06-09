@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 import matplotlib.mlab as mlab
+import fxn_storage as fxn
 from scipy import ndimage
 import pickle
 
@@ -31,6 +32,7 @@ class MegaGrid(object):
         Gets the coordinates of a grid that can fit all other grids (to use as basis for self.results_array)
         :return: 
         """
+        print('Making array grid')
         grid_list = []
         or_list = [0, 0, 0]
         far_list = [0, 0, 0]
@@ -51,9 +53,6 @@ class MegaGrid(object):
         self.grid_list = grid_list
         self.spacing = g.spacing
         self.tup_max_length = len(grid_list)
-
-        # self.array_grid = Grid(origin=(or_list[0], or_list[1], or_list[2]), far_corner=(far_list[0], far_list[1], far_list[2]),
-        #               spacing=self.spacing)
         self.array_grid_origin = (or_list[0], or_list[1], or_list[2])
         self.array_grid_far_corner = (far_list[0], far_list[1], far_list[2])
 
@@ -64,35 +63,38 @@ class MegaGrid(object):
         self.results_array = numpy array
         :return:
         """
+        print('Making results array')
         r_a_grid = Grid(origin=self.array_grid_origin, far_corner=self.array_grid_far_corner, spacing=self.spacing)
 
         nx, ny, nz = r_a_grid.nsteps
         results_array = np.zeros((nx, ny, nz), dtype=tuple)
         rec_spacing = 1 / self.spacing
 
+        def set_value(x, y, z):
+            r_x = x + int(d_coor[0])
+            r_y = y + int(d_coor[1])
+            r_z = z + int(d_coor[2])
+
+            if isinstance(results_array[r_x][r_y][r_z], tuple):
+                results_array[r_x][r_y][r_z] += (ar[x][y][z],)
+            else:
+                results_array[r_x][r_y][r_z] = (ar[x][y][z],)
+
+        vset_value = np.vectorize(set_value)
+
         for i in range(self.tup_max_length):
             g = Grid.from_file(self.grid_list[i])
-            d_coor = [g.bounding_box[0][b] - r_a_grid.bounding_box[0][b] for b in range(3)]
+            d_coor = [(g.bounding_box[0][b] - r_a_grid.bounding_box[0][b])*rec_spacing for b in range(3)]
             print(d_coor)
-
-            for x in range(g.nsteps[0]):
-                for y in range(g.nsteps[1]):
-                    for z in range(g.nsteps[2]):
-                        if g.value(x, y, z) != 0:
-                            r_x = x + int(d_coor[0] * rec_spacing)
-                            r_y = y + int(d_coor[1] * rec_spacing)
-                            r_z = z + int(d_coor[2] * rec_spacing)
-
-                            if isinstance(results_array[r_x][r_y][r_z], tuple):
-                                results_array[r_x][r_y][r_z] += (g.value(x, y, z),)
-                            else:
-                                results_array[r_x][r_y][r_z] = (g.value(x, y, z),)
+            ar = fxn.grid_to_numpy(g)
+            ind_ar = np.where(ar > 0)
+            vset_value(ind_ar[0], ind_ar[1], ind_ar[2])
 
         self.results_array = results_array
 
     def pickle_MegaGrid(self):
         """
-        Saves MegaGrids as pickles. Always pickle the whole objects, not just the npy arrays (coordinates information lost).
+        Saves MegaGrids as pickles.
         :return: 
         """
         pickle.dump(self, open(join(self.out_dir, '{}_{}_MegaGrid.p'.format(self.prot_name, self.probe)), 'wb'))
@@ -129,7 +131,7 @@ class MegaGrid(object):
 
     def get_gridpoint_means(self):
         """
-        For each point in the 3D grid, calculates the difference in score between each point in the tuple and the mean of the tuple. 
+        For each point in the MegaGrid, calculates the difference in score between each point in the tuple and the mean of the tuple. 
         :return: Python list
         """
         ind_array = np.indices(self.results_array.shape)
@@ -139,13 +141,36 @@ class MegaGrid(object):
             if isinstance(self.results_array[x][y][z], tuple):
                 num_zeros = self.tup_max_length - len(self.results_array[x][y][z])
                 if num_zeros != 0:
-                    print('Hmmm')
+                    print('Number of zeros', num_zeros, 'out of ', self.tup_max_length)
                 hist_arr = np.array(self.results_array[x][y][z])
                 means.extend(list(hist_arr - np.mean(hist_arr)))
 
         vget_means = np.vectorize(get_means)
         vget_means(ind_array[0], ind_array[1], ind_array[2])
         return means
+
+    def get_gridpoint_max(self):
+        """
+        For each point in the MegaGrid, calculates the max of the tuple
+        :return: 
+        """
+        ind_array = np.indices(self.results_array.shape)
+        maxes = []
+
+        def get_max(x, y, z):
+            """
+            Would be funnier if I knew a Max.
+            """
+            if isinstance(self.results_array[x][y][z], tuple):
+                num_zeros = self.tup_max_length - len(self.results_array[x][y][z])
+                if num_zeros != 0:
+                    print('Number of zeros: ', num_zeros)
+                hist_arr = np.array(self.results_array[x][y][z])
+                maxes.append(max(hist_arr))
+
+        vget_max = np.vectorize(get_max)
+        vget_max(ind_array[0], ind_array[1], ind_array[2])
+        return maxes
 
     def plot_gridpoint_spread(self, means):
         '''
@@ -238,6 +263,23 @@ class MegaGrid(object):
         r_a_grid.write(join(self.out_dir, '{}_Ghecom_ranges_{}.ccp4'.format(self.prot_name, self.probe)))
         return r_a_grid
 
+    def make_max_grid(self):
+        '''
+        Makes a grid that stores the maximum of values of each point
+        :return: ccdc.utilities Grid object
+        '''
+        r_a_grid = Grid(origin=self.array_grid_origin, far_corner=self.array_grid_far_corner, spacing=self.spacing)
+
+        for x in range(self.results_array.shape[0]):
+            for y in range(self.results_array.shape[1]):
+                for z in range(self.results_array.shape[2]):
+                    if isinstance(self.results_array[x][y][z], tuple):
+                        hist_arr = np.array(self.results_array[x][y][z])
+                        r_a_grid.set_value(x, y, z, (max(hist_arr)))
+
+        r_a_grid.write(join(self.out_dir, '{}_max_{}.ccp4'.format(self.prot_name, self.probe)))
+        return r_a_grid
+
     def make_mean_grid(self):
         '''
         Makes a grid that stores the mean of the sampld values at each point
@@ -276,6 +318,7 @@ class MegaGrid(object):
         :param probe_name: 'donor', 'acceptor', or 'apolar'
         :return: 
         """
+        print('In from_hotspot_maps')
         self.stem = stem
         self.out_dir = out_dir
         self.prot_name = prot_name
