@@ -69,6 +69,25 @@ def read_grids(stem, substring, charged_probes=False):
     return grid_dic
 
 
+def find_grid(stem, prot_name, probe=None):
+    """
+    Loops through a directory to find a specific grid. Doesn't discriminate probes
+    :param prot_name: 
+    :return: ccdc.utilities.Grid object
+    """
+    for root, subdirs, files in os.walk(stem):
+        for filename in files:
+            if prot_name in filename and '.ccp4' in filename:
+                name_path = os.path.join(root, filename)
+                if probe != None:
+                    if probe in filename:
+                        grid = Grid.from_file(name_path)
+                        return grid
+                else:
+                    grid = Grid.from_file(name_path)
+                    return grid
+
+
 # Functions for generating Hotspot Maps
 
 def prepare_protein(prot_name, struct_dict, ch='A'):
@@ -187,55 +206,6 @@ def make_histogram(grd, out_dir, suffix):
     plt.close()
 
 
-# Saving Grids
-
-def compress_grid(grid):
-    """
-    Compresses a grid without introducing artifacts (hopefully).
-    Note to self: get rid of all these loops! Put in padding size check.
-    :param grid: ccdc.utilities Grid
-    :return: ccdc.utilities Grid
-    """
-
-    nx, ny, nz = grid.nsteps
-    x_list = []
-    y_list = []
-    z_list = []
-
-    for x in range(nx):
-        for y in range(ny):
-            for z in range(nz):
-                if grid.value(x, y, z) != 0:
-                    coor = HotspotsHelper._indices_to_point(x, y, z, grid)
-                    # print(coor)
-                    x_list.append(coor[0])
-                    y_list.append(coor[1])
-                    z_list.append(coor[2])
-
-    compr_or = (min(x_list) - 2, min(y_list) - 2, min(z_list) - 2)
-    compr_far = (max(x_list) + 2, max(y_list) + 2, max(z_list) + 2)
-
-    rec_spacing = int(1 / grid.spacing)
-
-    compr_grid = Grid(origin=compr_or, far_corner=compr_far, spacing=grid.spacing)
-
-    d_coor = [compr_grid.bounding_box[0][b] - grid.bounding_box[0][b] for b in range(3)]
-    print(compr_grid.bounding_box)
-    print(d_coor)
-
-    for x in range(compr_grid.nsteps[0]):
-        for y in range(compr_grid.nsteps[1]):
-            for z in range(compr_grid.nsteps[2]):
-                r_x = x + int((d_coor[0]) * rec_spacing)
-                r_y = y + int((d_coor[1]) * rec_spacing)
-                r_z = z + int((d_coor[2]) * rec_spacing)
-                if grid.value(r_x, r_y, r_z) != 0:
-                    compr_grid.set_value(x, y, z, grid.value(r_x, r_y, r_z))
-
-    # compr_grid.write(join(out_dir, (substring1 + 'minimal_mihi_space2_{}.ccp4'.format(probe))))
-    return compr_grid
-
-
 # Utility functions for CCDC Grids
 
 def grid_to_numpy(g):
@@ -315,13 +285,38 @@ def vrun_gaussian(g, sigma):
     return new_grid
 
 
+# Saving Grids
+
+def compress_grid(grid):
+    """
+    Compresses a grid.
+    :param grid: ccdc.utilities Grid
+    :return: ccdc.utilities Grid
+    """
+
+    arr = grid_to_numpy(grid)
+    ind_arr = np.where(arr>0)
+    or_diff = [min(ind_arr[i]) for i in range(3)]
+    print(or_diff)
+    far_diff = [grid.nsteps[i] - max(ind_arr[i]) for i in range(3)]
+    print(far_diff)
+    if int(min(or_diff)) < 3 or int(min(far_diff)) < 3:
+        p = 0
+    else:
+        p = 2
+    region = (min(ind_arr[0])-p, min(ind_arr[1])-p, min(ind_arr[2])-p, max(ind_arr[0])+p, max(ind_arr[1])+p, max(ind_arr[2])+p)
+    compr_grid = Grid.sub_grid(grid, region)
+
+    return compr_grid
+
+
 # Functions to get selectivity maps between 2 grids
 
 def divide_select(g1, g2):
     """
     Makes a selectivity map by dividing two grids
-    :param path1: Grid1
-    :param path2: Grid2
+    :param g1: ccdc.utilities.Grid
+    :param g2: ccdc.utilities.Grid
     :return: ccdc.utilities Grid
     """
 
@@ -359,3 +354,64 @@ def subtract_select(g1, g2):
     g1, g2 = h._common_grid(g1, g2)
     sel_map = g1 - g2
     return sel_map
+
+def filter_map(g1, g2):
+    """
+    Sets 2 grids to the same size and coordinate frames. Points that are zero in one grid but sampled in the other are
+    set to the mean of their nonzero neighbours.
+    :param g1: ccdc.utilities.Grid
+    :param g2: ccdc.utilities.Grid
+    :return: ccdc.utilities.Grid
+    """
+
+    def filter_point(x, y, z):
+        loc_arr = np.array([g[x+i][y+j][z+k] for i in range(-1, 2) for j in range(-1, 2) for k in range(-1, 2)])
+        if loc_arr[loc_arr>0].size != 0:
+            print(np.mean(loc_arr[loc_arr > 0]))
+            new_grid[x][y][z] = np.mean(loc_arr[loc_arr>0])
+
+    vfilter_point = np.vectorize(filter_point)
+    h = HotspotsHelper()
+    g1 = compress_grid(g1)
+    g2 = compress_grid(g2)
+    g1, g2 = h._common_grid(g1, g2, padding=1)
+    com_bound_box = g1.bounding_box
+    com_spacing = g1.spacing
+
+    arr1 = grid_to_numpy(g1)
+    arr2 = grid_to_numpy(g2)
+
+    b_arr1 = np.copy(arr1)
+    b_arr2 = np.copy(arr2)
+
+    b_arr1[b_arr1>0] = 1.0
+    b_arr2[b_arr2>0] = -1.0
+
+    diff_arr = b_arr1 + b_arr2
+
+    unmatch1 = np.where(diff_arr == 1)
+    unmatch2 = np.where(diff_arr == -1)
+
+    g = arr1
+    new_grid = np.copy(arr1)
+    vfilter_point(unmatch2[0], unmatch2[1], unmatch2[2])
+    f_arr1 = np.copy(new_grid)
+    f_arr1[f_arr1<1] = 1
+
+    g = arr2
+    new_grid = np.copy(arr2)
+    vfilter_point(unmatch1[0], unmatch1[1], unmatch1[2])
+    f_arr2 = np.copy(new_grid)
+    f_arr2[f_arr2<1] = 1
+
+    sel_arr = np.divide(f_arr1, f_arr2)
+    sel_arr[sel_arr == 1] = 0
+
+    sel_map = Grid(origin=com_bound_box[0], far_corner=com_bound_box[1], spacing=com_spacing)
+
+    for x in range(sel_map.nsteps[0]):
+        for y in range(sel_map.nsteps[1]):
+            for z in range(sel_map.nsteps[2]):
+                sel_map.set_value(x, y, z, sel_arr[x][y][z])
+    return sel_map
+
