@@ -80,12 +80,12 @@ class MegaGrid(object):
             else:
                 results_array[r_x][r_y][r_z] = (ar[x][y][z],)
 
-        vset_value = np.vectorize(set_value)
+        vset_value = np.vectorize(set_value, otypes=[tuple])
 
         for i in range(self.tup_max_length):
             g = Grid.from_file(self.grid_list[i])
             d_coor = [(g.bounding_box[0][b] - r_a_grid.bounding_box[0][b])*rec_spacing for b in range(3)]
-            print(d_coor)
+            print('D_coor:',d_coor)
             ar = fxn.grid_to_numpy(g)
             ind_ar = np.where(ar > 0)
             vset_value(ind_ar[0], ind_ar[1], ind_ar[2])
@@ -145,7 +145,7 @@ class MegaGrid(object):
                 hist_arr = np.array(self.results_array[x][y][z])
                 means.extend(list(hist_arr - np.mean(hist_arr)))
 
-        vget_means = np.vectorize(get_means)
+        vget_means = np.vectorize(get_means, otypes=[list])
         vget_means(ind_array[0], ind_array[1], ind_array[2])
         return means
 
@@ -168,7 +168,7 @@ class MegaGrid(object):
                 hist_arr = np.array(self.results_array[x][y][z])
                 maxes.append(max(hist_arr))
 
-        vget_max = np.vectorize(get_max)
+        vget_max = np.vectorize(get_max, otypes=[list])
         vget_max(ind_array[0], ind_array[1], ind_array[2])
         return maxes
 
@@ -180,12 +180,19 @@ class MegaGrid(object):
         mean_arr = np.array(means)
         (mu, sigma) = norm.fit(mean_arr)
         n, bins, patches = plt.hist(means, bins=40, normed=1)
+        #print(bins)
+        #y_fit = np.random.normal(mu, sigma, np.shape(mean_arr))
         y = mlab.normpdf(bins, mu, sigma)
         a = plt.plot(bins, y, 'r--', linewidth=2)
-        plt.title('Mu: {}, Sigma: {}'.format(round(mu, 2), round(sigma, 2)))
-        hist_name = self.prot_name + '_{}_gridpoint_spread'.format(self.probe)
+        bins=0.5*(bins[1:]+bins[:-1])
+        y_fit=mlab.normpdf(bins,mu,sigma)
+        ss_res = np.sum((n - y_fit) ** 2)
+        ss_tot = np.sum((n - np.mean(n)) ** 2)
+        r2 = 1 - (ss_res / ss_tot)
+        plt.title('Mu: {}, Sigma: {}, R^2 : {} '.format(round(mu, 2), round(sigma, 2), round(r2, 4)))
+        hist_name = self.prot_name + '_{}_gridpoint_spread_fit'.format(self.probe)
         plt.savefig(join(self.out_dir, hist_name))
-        # plt.show()
+        #plt.show()
         plt.close()
 
     def get_gridpoint_ranges(self):
@@ -200,7 +207,7 @@ class MegaGrid(object):
                 hist_arr = np.array(self.results_array[x][y][z])
                 ranges.append(max(hist_arr) - min(hist_arr))
 
-        vget_ranges = np.vectorize(get_ranges)
+        vget_ranges = np.vectorize(get_ranges, otypes=[list])
         vget_ranges(ind_array[0], ind_array[1], ind_array[2])
         return ranges
 
@@ -209,20 +216,7 @@ class MegaGrid(object):
         Plots the range of the tuple values for each point in the 3D grid
         :return: ranges = list of the tuple ranges at each point
         '''
-        ind_array = np.indices(self.results_array.shape)
-        ranges = []
-
-        def get_ranges(x, y, z):
-            if isinstance(self.results_array[x][y][z], tuple):
-                num_zeros = self.tup_max_length - len(self.results_array[x][y][z])
-                if num_zeros != 0:
-                    print('Number of zeros: ', num_zeros)
-                hist_arr = np.array(self.results_array[x][y][z])
-                ranges.append(max(hist_arr) - min(hist_arr))
-
-        vget_ranges = np.vectorize(get_ranges)
-        vget_ranges(ind_array[0], ind_array[1], ind_array[2])
-
+		
         plt.hist(ranges, bins=40, normed=0)
         plt.title('Score ranges for {} {}'.format(self.prot_name, self.probe))
         hist_name = self.prot_name + '_{}_score_ranges'.format(self.probe)
@@ -282,7 +276,7 @@ class MegaGrid(object):
 
     def make_mean_grid(self):
         '''
-        Makes a grid that stores the mean of the sampld values at each point
+        Makes a grid that stores the mean of the sampled values at each point
         :return: ccdc.utilities Grid object
         '''
         r_a_grid = Grid(origin=self.array_grid_origin, far_corner=self.array_grid_far_corner, spacing=self.spacing)
