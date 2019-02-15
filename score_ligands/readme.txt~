@@ -1,0 +1,18 @@
+11-02-2019 - Fragment Elaboration on NUDT5 (Yuliya's fragments)
+
+Scripts for calculating hotspots and scoring ligands with the Hotspots API 1.0 version (note - still running on 2017 version of CSD and CCDC API version 1.5 (2017) Functionality involving the Cavity module not included.
+
+Note - for now using "hots_rdkit" enviroment with CCDC API 1.5.1.
+
+Structure:
+
+1. Input data: .pdb file - use for both bound and ground state (PANDDA)
+	input directory = BatchScorer.stem
+	TODO: see how bound and ground states are stored in Rachael's database and fit the BatchScorer around that. For now - use this directory structure:
+	
+	stem/"x"+event_number/*bound*.pdb for the bound state
+	stem/"x"+event_number/*ground*.pdb for the ground state
+
+2. Ouput data:
+	Save calculated hotspots into stem/BatchScorer.identifier/"{}_zipped_results".format(BatchScorer.identifier)
+	Save scored ligands in stem/BatchScorer.identifier/"{}_scored_ligands".format(BatchScorer.identifier) - for now as just a 

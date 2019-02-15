@@ -1,0 +1,35 @@
+Hotspots log from run at 2019-2-15 11:23 
+protein_name: NUDT5
+keyword: bound
+out_dir: /home/jin76872/Desktop/Mih/Data/fragment_elaboration/score_ligands/NUDT5/hotspot_results/NUDT5_0681_A_bound_results
+event_id: 0681
+stem: /home/jin76872/Desktop/Mih/Data/fragment_elaboration/score_ligands/NUDT5
+protein_path: /home/jin76872/Desktop/Mih/Data/fragment_elaboration/score_ligands/NUDT5/x0681/681-refine.split.bound-state.pdb
+chains: ['A']
+Hotspots log from run at 2019-2-15 11:24 
+protein_name: NUDT5
+keyword: bound
+out_dir: /home/jin76872/Desktop/Mih/Data/fragment_elaboration/score_ligands/NUDT5/hotspot_results/NUDT5_0681_A_bound_results
+event_id: 0681
+stem: /home/jin76872/Desktop/Mih/Data/fragment_elaboration/score_ligands/NUDT5
+protein_path: /home/jin76872/Desktop/Mih/Data/fragment_elaboration/score_ligands/NUDT5/x0681/681-refine.split.bound-state.pdb
+chains: ['A']
+Hotspots log calculated at 2019-2-15 11:28 
+protein_name: NUDT5
+keyword: bound
+out_dir: /home/jin76872/Desktop/Mih/Data/fragment_elaboration/score_ligands/NUDT5/hotspot_results/NUDT5_0681_A_bound_results
+event_id: 0681
+stem: /home/jin76872/Desktop/Mih/Data/fragment_elaboration/score_ligands/NUDT5
+protein_path: /home/jin76872/Desktop/Mih/Data/fragment_elaboration/score_ligands/NUDT5/x0681/681-refine.split.bound-state.pdb
+chains: ['A']
+
+Hotspots log calculated at 2019-2-15 11:28 
+protein_name: NUDT5
+keyword: bound
+out_dir: /home/jin76872/Desktop/Mih/Data/fragment_elaboration/score_ligands/NUDT5/hotspot_results/NUDT5_0681_A_bound_results
+event_id: 0681
+stem: /home/jin76872/Desktop/Mih/Data/fragment_elaboration/score_ligands/NUDT5
+protein_path: /home/jin76872/Desktop/Mih/Data/fragment_elaboration/score_ligands/NUDT5/x0681/681-refine.split.bound-state.pdb
+chains: ['A']
+Number of rotations: 500 
+
