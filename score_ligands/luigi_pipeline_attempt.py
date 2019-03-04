@@ -13,7 +13,7 @@ class LDiamondRunner(luigi.Task):
     def run(self):
         ldr = DiamondRunner(stem_dir=self.input_dict["stem"],
                             prot_name=self.input_dict["protein_name"],
-                            event_id=self.input_dict["event_id"],
+                            xstal_id=self.input_dict["event_id"],
                             keyword=self.input_dict["keyword"],
                             chains=self.input_dict["chains"])
         ldr.run_hotspot_calculation(self.input_dict["number_rotations"])
