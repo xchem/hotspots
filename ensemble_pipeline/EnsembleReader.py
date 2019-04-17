@@ -1,14 +1,6 @@
 from __future__ import print_function, division
-from ccdc.protein import Protein
-from ccdc.io import MoleculeWriter, MoleculeReader
 import pandas as pd
-from os.path import join, basename, dirname, exists
-from os import mkdir
-from glob import glob
-from hotspots import data
-from hotspots.hs_io import HotspotReader, HotspotWriter
-from hotspots.grid_extension import Grid
-import numpy as np
+from os.path import join
 from Ensemble import EnsembleResult
 
 

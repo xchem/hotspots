@@ -16,24 +16,26 @@ from run_hotspots import ParalleliselRunner
 
 class Ensemble:
     """
-    Abstract class with methods used by both EnsembleResult and EnsembleComparison
+    Parent class with methods used by both EnsembleResult and MultipleEnsemble
     """
     def __init__(self, root_dir=None, ref_ID=None):
         # The pipeline root directory
         self.root_dir = root_dir
         # Pandas series, carries information on the reference structure for the ensemble
         self.reference_ID = ref_ID
-        # The extracted binding site of the reference structure
+        # The extracted binding site of the reference structure (ccdc.Protein.BindingSite)
         self.reference_binding_site = None
         # Although the Ensemble class doesn't do any alignments, the child classes both use the same settings.
         self.alignment_settings = Protein.ChainSuperposition.Settings()
+        # Set the default for this from a config?
         self.alignment_settings.superposition_atoms = "BACKBONE"
+        # TODO: controlled by config file - linked to the hotspot settings
         self.hotspot_probe_types = ["donor", "acceptor", "apolar", "positive", "negative"]
 
     @staticmethod
     def get_binding_site(row):
         """
-        Given a row from an EnsembleResult dataframe, extract the binding site of interest
+        Given a row from an EnsembleResult.protein_data dataframe, extract the binding site of interest
         :param row: 
         :return: a :class: ccdc.protein.BindingSiteFromListOfResidues instance
         """
@@ -45,10 +47,10 @@ class Ensemble:
             if chain.identifier not in row["Chains"]:
                 p.remove_chain(chain.identifier)
 
-        # Get bond orders for the ligand
+        # Get correct bonding for the ligand
         p.detect_ligand_bonds()
 
-        # PDB ligands labelled with the chain they come from, but not necessarily the case for XChem ones. So we look manually.
+        # Eliminate ligands from other chains and binding sites.
         for lig in p.ligands:
             # Get the residues around the ligand (5 A radius).
             lbs = Protein.BindingSiteFromMolecule(p, lig, 5)
@@ -88,15 +90,16 @@ class Ensemble:
             return new_g
 
         else:
-            print("Selected area larger than grid; try reducing the padding")
+            print("Selected area larger than grid; try reducing the padding in shrink_hotspots()")
             # TODO: Log as error
 
     def shrink_hotspots(self, hotspot_paths, padding=2.0):
         """
         Takes in the calculated hotspots on the aligned ensemble. Crops and saves only the area around the reference binding site.
-        Results are stored in the 
+        Results are stored in the same parent directory as the fullsized hotspots, in dir called "binding_site_maps"
         :param list hotspot_paths: Paths to the hotspot results we would like to shrink.
-        :return: list of the paths for the ensemble.
+        :param float padding: How many angstroms away from furthest binding site atom to look.
+        :return: list of the paths for all shrunk hotspots in the ensemble.
         """
         # Get the area to truncate around the binding site:
 
@@ -124,7 +127,7 @@ class Ensemble:
             res_path = dirname(p)
             # Save shrunk hotspot, assuming the directory it was previously in was named sensibly.
             h_out_dir = join(res_path, "binding_site_maps")
-            h_out_dir_list.append(h_out_dir)
+            h_out_dir_list.append(join(h_out_dir, "out"))
             with HotspotWriter(h_out_dir, visualisation="pymol", grid_extension=".ccp4", zip_results=False) as writer:
                 writer.write(h_result)
 
@@ -153,10 +156,12 @@ class EnsembleResult(Ensemble):
         assert len(splitid) == 2, "Identifier not in the right format"
         fname = p.identifier + ".pdb"
 
-        if not exists(join(self.root_dir, p.identifier)):
-            mkdir(join(self.root_dir, p.identifier))
+        prot_dir = join(self.root_dir, p.identifier)
 
-        p_fname = join(self.root_dir, p.identifier, fname)
+        if not exists(prot_dir):
+            mkdir(prot_dir)
+
+        p_fname = join(prot_dir, fname)
         with MoleculeWriter(p_fname) as protein_writer:
             protein_writer.write(p)
 
@@ -165,8 +170,8 @@ class EnsembleResult(Ensemble):
     def align_ensemble(self, bs_list):
         """
         Aligns all elements of the ensemble to the reference structure
-        :param list bs_list: python list of :class: ccdc.Protein.BindingSIteFromListOfResidues instances
-        :return: list of aligned :class: ccdc.Protein.BindingSIteFromListOfResidues instances
+        :param list bs_list: python list of :class: 'ccdc.Protein.BindingSiteFromListOfResidues' instances
+        :return: list of aligned :class: 'ccdc.Protein.BindingSiteFromListOfResidues instances'
         """
         # Keep track of the RMSDs between the reference and the ensemble members
         rmsd_list = []
@@ -201,13 +206,14 @@ class EnsembleResult(Ensemble):
 
     def run_hotspots(self, nrotations=3000, charged=False):
         """
-        
+        :param int nrotations: how many probe rotations to do in the hotspots calculation. Supply in config file.
+        :param bool charged: whether to use charged probes in the hotspots calculation. Supply in config file.
         :return: return the paths to the hotspots.
         """
-        # First, check that the ensemble has been aligned.
+        # First, make sure we have the right structures
         paths_list = self.process_ensemble_proteins()
 
-        # Cmd or other call to the Luigi task that controls the hotspots?
+        # Not the most intelligent use of Luigi, but will calculate a lot of hotspots very reliably.
         luigi.build([ParalleliselRunner(paths_list, nrotations, charged)], local_scheduler=True, workers=12)
         # TODO: see what happens in case luigi fails on some of these
         hotspot_paths_list = [join(dirname(p), "fullsize_hotspots", "out.zip") for p in paths_list]
@@ -224,7 +230,7 @@ class EnsembleResult(Ensemble):
         # This returns the directories where the shrunk hotspots are stored, but not paths to individual maps.
         shrunk_hots = self.shrink_hotspots(hots_list)
 
-        # TODO Make sure that GridEnsemble can handle not being supplied paths
+        # TODO Make sure that GridEnsemble can handle not being supplied paths in a more graceful way.
         for probe in self.hotspot_probe_types:
             ge_paths = glob([join(sh, "{}.ccp4".format(probe)) for sh in shrunk_hots])
             ge = GridEnsemble(ge_paths)
