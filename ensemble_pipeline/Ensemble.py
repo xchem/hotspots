@@ -40,9 +40,11 @@ class Ensemble:
         :return: a :class: ccdc.protein.BindingSiteFromListOfResidues instance
         """
         # Load up protein
+        print("Getting binding site for {}".format(basename(row["Filename"])))
         p = Protein.from_file(row["Filename"])
 
         # Remove all chains we don't care about
+        print(row["Chains"])
         for chain in p.chains:
             if chain.identifier not in row["Chains"]:
                 p.remove_chain(chain.identifier)
@@ -54,7 +56,12 @@ class Ensemble:
         for lig in p.ligands:
             # Get the residues around the ligand (5 A radius).
             lbs = Protein.BindingSiteFromMolecule(p, lig, 5)
-            ligand_chains = list(set([r.identifier.split(":")[0] for r in lbs.residues]))
+            try:
+                ligand_chains = list(set([r.identifier.split(":")[0] for r in lbs.residues]))
+
+            # CCDC API can fail here if the ligand is an aminoacid (eg in bromodomains), as it then looks for the amino acid in the protein sequence.
+            except IndexError:
+                continue
             # If there is no overlap between the ligand chain and the target chains, remove the ligand.
             if all(chain not in row["Chains"] for chain in ligand_chains):
                 p.remove_ligand(lig.identifier)
@@ -66,6 +73,7 @@ class Ensemble:
         bs = Protein.BindingSiteFromListOfResidues(p, resi)
         # Set the identifier of the protein for easy recall later
         bs.protein.identifier = "{}_{}".format(row["Ensemble ID"], row["ID"])
+        print("Chains", [ch.identifier for ch in bs.protein.chains])
         return bs
 
     @staticmethod
@@ -102,6 +110,7 @@ class Ensemble:
         :return: list of the paths for all shrunk hotspots in the ensemble.
         """
         # Get the area to truncate around the binding site:
+        print("Shrinking hotspots for ensemble...")
 
         if not self.reference_binding_site:
             self.reference_binding_site = self.get_binding_site(self.reference_ID)
@@ -139,7 +148,7 @@ class EnsembleResult(Ensemble):
     """
 
     def __init__(self, root_dir, ref_id, df, aligned=False):
-        Ensemble.__init__(root_dir, ref_id)
+        Ensemble.__init__(self, root_dir, ref_id)
         self.ensemble_ID = self.reference_ID["Ensemble ID"]  # Usually the target name
         self.protein_data = df  # pd Dataframe, output of SIENAReader or XChemReader
         self.ligand_data = None  # pd Dataframe, based on the ligands extracted from structures in protein_data
@@ -151,6 +160,7 @@ class EnsembleResult(Ensemble):
         :param bs: 
         :return: str, the path to where the protein is saved
         """
+        print("Saving protein", bs.protein.identifier, [ch.identifier for ch in bs.protein.chains])
         p = bs.protein
         splitid = p.identifier.split("_")
         assert len(splitid) == 2, "Identifier not in the right format"
@@ -173,10 +183,11 @@ class EnsembleResult(Ensemble):
         :param list bs_list: python list of :class: 'ccdc.Protein.BindingSiteFromListOfResidues' instances
         :return: list of aligned :class: 'ccdc.Protein.BindingSiteFromListOfResidues instances'
         """
+        print("Aligning ensemble proteins for {}".format(self.ensemble_ID))
         # Keep track of the RMSDs between the reference and the ensemble members
         rmsd_list = []
         # Copy the binding site to avoid changing it during superposition - investigate if actually needed.
-        e_ref_bs = self.reference_binding_site.copy()
+        e_ref_bs = self.reference_binding_site
 
         for bs in bs_list:
             chain_superposition = Protein.ChainSuperposition(self.alignment_settings)
@@ -185,8 +196,9 @@ class EnsembleResult(Ensemble):
                                                                    e_ref_bs)
             rmsd_list.append(rmsd)
 
-        # Add RMSD column yo the protein dataframe
+        # Add RMSD column to the protein dataframe
         self.protein_data["RMSD"] = rmsd_list
+        self.aligned= True
         return bs_list
 
     def process_ensemble_proteins(self):
@@ -195,26 +207,25 @@ class EnsembleResult(Ensemble):
         :return: 
         """
         # Load up the binding sites of the ensemble:
-        bs_list = [self.get_binding_site(r) for idx, r in self.protein_data.iterrows]
+        bs_list = [self.get_binding_site(r) for idx, r in self.protein_data.iterrows()]
 
         if not self.aligned:
             bs_list = self.align_ensemble(bs_list)
             self.aligned = True
 
         paths_list = [self._save_protein(bs) for  bs in bs_list]
+        self.protein_data.to_csv(join(self.root_dir, "{}.csv".format(self.ensemble_ID)))
         return paths_list
 
-    def run_hotspots(self, nrotations=3000, charged=False):
+    def run_hotspots(self, paths_list, nrotations=100000, charged=False):
         """
         :param int nrotations: how many probe rotations to do in the hotspots calculation. Supply in config file.
         :param bool charged: whether to use charged probes in the hotspots calculation. Supply in config file.
         :return: return the paths to the hotspots.
         """
-        # First, make sure we have the right structures
-        paths_list = self.process_ensemble_proteins()
 
         # Not the most intelligent use of Luigi, but will calculate a lot of hotspots very reliably.
-        luigi.build([ParalleliselRunner(paths_list, nrotations, charged)], local_scheduler=True, workers=12)
+        luigi.build([ParalleliselRunner(paths_list, nrotations, charged)], local_scheduler=True, workers=30)
         # TODO: see what happens in case luigi fails on some of these
         hotspot_paths_list = [join(dirname(p), "fullsize_hotspots", "out.zip") for p in paths_list]
 
@@ -222,10 +233,10 @@ class EnsembleResult(Ensemble):
 
     def make_ensemble_maps(self, hotspot_rotations, hotspot_charged_probes):
         """
-        Make an ensmeble map for each available probe type and save it.
+        Make an ensemble map for each available probe type and save it.
         :return: 
         """
-        hots_list = self.run_hostpots(hotspot_rotations, hotspot_charged_probes)
+        hots_list = self.run_hotspots(hotspot_rotations, hotspot_charged_probes)
 
         # This returns the directories where the shrunk hotspots are stored, but not paths to individual maps.
         shrunk_hots = self.shrink_hotspots(hots_list)
@@ -263,7 +274,7 @@ class MultipleEnsemble(Ensemble):
         self.ensemble_references_RMSD = references_rmsds
         self.savedir = join(self.root_dir, "EnsembleComparisons")
 
-    def align_ensembles(self):
+    def align_references(self):
         """
         For all the EnsembleResults in the MultipleEnsemble, aligns the reference structure of each EnsembleResult to that
         of the reference result of the MultipleEnsemble
@@ -273,6 +284,7 @@ class MultipleEnsemble(Ensemble):
         self.reference_ensemble.reference_binding_site = self.get_binding_site(self.reference_ID)
 
         for key, ens in self.ensembles.items():
+            print(key, ens.reference_ID)
             ens.reference_binding_site = self.get_binding_site(ens.reference_ID)
 
         ref_bs = self.reference_ensemble.reference_binding_site
@@ -284,7 +296,8 @@ class MultipleEnsemble(Ensemble):
             (rmsd, transformation) = chain_superposition.superpose(ref_bs.protein.chains[0],
                                                                    ens.reference_binding_site.protein.chains[0],
                                                                    ref_bs)
-            ens.process_ensemble_proteins()
+
+            #ens.process_ensemble_proteins()
 
             rmsds.append("RMSD ref: {} {} query: {} {} = {:6.4f}".format(self.reference_ensemble.ensemble_ID,
                                                                          self.reference_ensemble.reference_ID["ID"],

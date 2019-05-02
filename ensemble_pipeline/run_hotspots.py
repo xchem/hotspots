@@ -21,6 +21,12 @@ class RunHotspots:
     def prepare_protein(self):
 
         prot = Protein.from_file(self.in_file)
+        chains = list(basename(self.in_file).split("-")[1].replace(".pdb", ""))
+        print(chains, prot.chains)
+        for ch in prot.chains:
+            if ch.identifier not in chains:
+                prot.remove_chain(ch.identifier)
+
         prot.remove_all_waters()
         for ligand in prot.ligands:
             prot.remove_ligand(ligand.identifier)
@@ -59,7 +65,7 @@ class RunHotspots:
                                 probe_size=7,
                                 buriedness_method=method,
                                 cavities=None,
-                                nprocesses=3,
+                                nprocesses=1,
                                 settings=settings)
         #self.out_dir = self.make_savedir()
         # Save and zip the SuperStar Grids:

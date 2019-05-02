@@ -1,7 +1,9 @@
 from __future__ import print_function, division
 import pandas as pd
-from os.path import join
+from os import mkdir
+from os.path import join, exists
 from Ensemble import EnsembleResult
+
 
 
 class SIENAreader:
@@ -18,8 +20,8 @@ class SIENAreader:
         self.ensemble_name = ens_name
         self.reference_structure = None
         self.lig_dir = join(self.direc, "ligand")
-        self.pdb_dir = join(self.direc, "ensemble")
-        self.result_stats = pd.read_csv(join(self.direc, "resultStatistic.csv"), sep=";")
+        self.pdb_dir = join(self.direc, "pdb_files")
+        self.result_stats = pd.read_csv(join(self.direc,"result_table", "resultStatistic.csv"), sep=";")
         self.alignment_file = None
         self.proteins_df = None
         self.aa_dic = {"A": "ALA", "C": "CYS", "D": "ASP", "E": "GLU", "F": "PHE", "G": "GLY", "H": "HIS", "I": "ILE", "K" : "LYS",
@@ -36,7 +38,7 @@ class SIENAreader:
         new_path = join(self.direc, "pd_readable_alignment.csv")
         self.alignment_file = new_path
 
-        with open(join(self.direc, "alignment.txt"), "r") as input:
+        with open(join(self.direc, "alignment", "alignment.txt"), "r") as input:
             with open(self.alignment_file, "w") as output:
                 l = input.readlines()
                 # The first line says "Alignment:" - we want to get rid of it
@@ -106,7 +108,7 @@ class SIENAreader:
         :return: dictionary
         """
         chains = self.get_chains(row)
-        row_dic = {"Filename": join(self.pdb_dir, "{}-{}.pdb".format(row[0], idx+1)),
+        row_dic = {"Filename": join(self.pdb_dir, "{}_{}.pdb".format(row[0], idx+1)),
                    # Assume that the combination of PDB ID and binding site residues is unqiue. Possibly problematic for NUDT5?
                    "ID": "{}-{}".format(row[0], "".join(chains)),
                    "PDB ID": row[0],
@@ -143,8 +145,11 @@ class SIENAreader:
         return a
 
     def output_ensemble(self):
+        prot_df = self.get_ensemble_protein_df()
         e = EnsembleResult(root_dir=self.out_dir,
                            ref_id=self.reference_structure.squeeze(),
-                           df=self.get_ensemble_protein_df())
+                           df=prot_df)
         e.ensemble_ID = self.ensemble_name
+        if not exists(self.out_dir):
+            mkdir(self.out_dir)
         return e
