@@ -129,6 +129,45 @@
     return loaded_objects;
 }
 
+function showMoleculeSurface(loaded_objects, params){
+//params.fname = str, name of the protein we want a surface calculated for.
+
+    for (var i in loaded_objects){
+        if (loaded_objects[i].name.includes(params.fname) && (typeof loaded_objects[i].structure!=='undefined')){
+            loaded_objects[i].addRepresentation('surface', {surfaceType:'sas'})
+        }
+    }
+
+}
+
+function showProteinSurface(loaded_objects, params){
+//params.fname = str, name of the protein we want a surface calculated for
+//params.surface_params = {}
+
+    for (var i in loaded_objects){
+        if (loaded_objects[i].name.includes(params.fname) && (typeof loaded_objects[i].structure!=='undefined')){
+			selection = "not( not polymer or hetero ) and not(water or ion)";
+            loaded_objects[i].addRepresentation('surface', {sele: selection, surfaceType:'av', opacity: params.surface_params.opacity}).setColor(params.surface_params.color)
+        }
+    }
+	 return loaded_objects;
+}
+
+function showSelectedSurface(loaded_objects, params){
+//params.fname = str, name of the protein we want a surface calculated for
+//params.sele = NGL selection that we want to make
+//params.surface_params = {}
+
+    for (var i in loaded_objects){
+        if (loaded_objects[i].name.includes(params.fname) && (typeof loaded_objects[i].structure!=='undefined')){
+			var selection = params.sele;
+            loaded_objects[i].addRepresentation('surface', {sele: selection, surfaceType:'av', opacity: params.surface_params.opacity}).setColor(params.surface_params.color)
+        }
+    }
+	 return loaded_objects;
+}
+
+
 
 function colorAllStructures(loaded_objects, prot_and_col){
 //prot_and_col = list of strings: first element= potein name, second = protein colour
@@ -233,11 +272,11 @@ function showBinders(loaded_objects, params){
 	// params =[protein_name, ligand_name(optional)]
 	for (var i in loaded_objects){
             if(loaded_objects[i].name.includes(params[0]) && (typeof loaded_objects[i].structure!=='undefined')){
-            	selection = "(( not polymer or hetero ) and not ( water or ion ))";
+            	var selection = "(( not polymer or hetero ) and not ( water or ion ))";
             	var m = loaded_objects[i].addRepresentation('ball+stick', {sele: selection, color:"magenta", colorscheme: "element", multipleBond: true});
 				//loaded_objects[i].reprList["ball+stick"].setColor("element")
 				m.setColor("element")
-            	loaded_objects[i].updateRepresentations({position:true});
+            	//sloaded_objects[i].updateRepresentations({position:true});
                
             }
         }
@@ -249,7 +288,7 @@ function showAllResidues(loaded_objects, params){
 	for (var i in loaded_objects){
             if(loaded_objects[i].name.includes(params[0]) && (typeof loaded_objects[i].structure!=='undefined')){
             	if (typeof params[1] !=='undefined'){
-	            	selection = params[1];
+	            	var selection = params[1];
 	            	loaded_objects[i].addRepresentation('licorice', {sele: selection});
 	            	continue;
             	}
@@ -275,7 +314,7 @@ function showBindingResidues(loaded_objects, params) {
     			if (!atomSet._words.every(isZero)){
                     var atomSet2 =loaded_objects[i].structure.getAtomSetWithinGroup( atomSet );
                     var sele2 = atomSet2.toSeleString()+' and not(water or ion or hetero)';
-                    loaded_objects[i].addRepresentation('line', {sele: sele2, colorScheme: 'element', multipleBond: true});
+                    loaded_objects[i].addRepresentation('line', {sele: sele2, colorScheme: 'element', multipleBond: true, linewidth:5});
                     loaded_objects[i].updateRepresentations({position:true});
                 }
                
@@ -387,8 +426,6 @@ function showBindingSiteWaters(loaded_objects, params) {
 }
 
 function showAllContacts(loaded_objects, params){
-    //shows contacts withn 5A of the bound stuff
-    //doesn't work very well
     for (var i in loaded_objects){
             if(loaded_objects[i].name.includes(params[0]) && (typeof loaded_objects[i].structure!=='undefined')){
                 loaded_objects[i].addRepresentation('contact', {
@@ -399,6 +436,26 @@ function showAllContacts(loaded_objects, params){
             }
         }
     return loaded_objects;
+}
+
+function showSpecificContact(loaded_objects, params){
+	for (var i in loaded_objects){
+            if(loaded_objects[i].name.includes(params[0]) && (typeof loaded_objects[i].structure!=='undefined')){
+            	var selection = new NGL.Selection(params[1]);
+            	var radius = 3;
+    			var atomSet = loaded_objects[i].structure.getAtomSetWithinSelection( selection, radius );
+    			var atomSet2 =loaded_objects[i].structure.getAtomSetWithinGroup( atomSet );
+    			var sele2 = atomSet2.toSeleString();
+            	loaded_objects[i].addRepresentation('contact', {
+            		masterModelIndex: 0,
+                	weakHydrogenBond: true,
+               		maxHbondDonPlaneAngle: 35,
+               		linewidth: 1,
+            		sele: sele2 + " or LIG"});   
+            }
+        }
+	
+	return loaded_objects;
 }
 
 function saveChainHetAtom(loaded_objects, params){

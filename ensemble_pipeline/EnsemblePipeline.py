@@ -7,6 +7,7 @@ from Ensemble import EnsembleResult, MultipleEnsemble
 from EnsembleReader import SIENAreader
 from SIENA_query import Search
 import tempfile
+import pandas as pd
 
 class EnsembleParams:
     def __init__(self, root_path):
@@ -148,9 +149,10 @@ class EnsemblePipeline:
 
         return ensemble
 
-    def ensembleResultfromSIENA(self, ens_name, siena_dir):
+    def ensembleResultfromSIENA(self, ens_name, siena_dir, ref_pdb):
         sr = SIENAreader(siena_dir=siena_dir,
                          ens_name=ens_name,
+                         ref_pdb=ref_pdb,
                          out_dir= self.io.get_ensemble_dir(ens_name))
         e = sr.output_ensemble()
         e.aligned = self.params.aligned_references
@@ -163,26 +165,36 @@ class EnsemblePipeline:
             print(ens_name)
             pdb, lig = self.params.ensemble_dict[ens_name]
             print(type(str(pdb)), type(str(lig)))
-            siena_result = self.get_SIENA_ensemble(str(pdb), str(lig))
+            #siena_result = self.get_SIENA_ensemble(str(pdb), str(lig))
             s_dir = self.io.get_SIENA_dir(ens_name)
-            siena_result.save(out_dir=s_dir)
+            #siena_result.save(out_dir=s_dir)
             print(s_dir)
             SIENA_dict[ens_name] = s_dir
 
-        e_dict = {key: self.ensembleResultfromSIENA(key, val) for key, val in SIENA_dict.items()}
+        print(SIENA_dict)
+
+        e_dict = {key: self.ensembleResultfromSIENA(key, val, self.params.ensemble_dict[key][0]) for key, val in SIENA_dict.items()}
 
         me = MultipleEnsemble(root_dir=self.params.pipeline_root,
                               ensemble_dict=e_dict,
                               ref_id=e_dict[self.params.reference_ensemble].reference_ID,
                               align_references=self.params.aligned_references)
-        me.align_references()
-
+        #me.align_references()
         e_pdbs = {}
         print("Aligning proteins within the ensembles")
         for e_name, ens in me.ensembles.items():
-            e_pdbs[e_name] = ens.process_ensemble_proteins()
+            #e_pdbs[e_name] = ens.process_ensemble_proteins()
+            e_pdbs[e_name] = []
+            e_dir = join(ens.root_dir)
+            e_info = pd.read_csv(join(e_dir, "resultStatistic_fragments.csv"))
+            prot_paths = []
+            for idx, row in e_info.iterrows():
+                p_name = "{}_{}-{}".format(e_name, row["PDB code"].strip(), row["PDB chains"].strip())
+                p_path = join(e_dir, p_name, "{}.pdb".format(p_name))
+                print(p_path)
+                e_pdbs[e_name].append(p_path)
         self.io.ensemble_pdbs = e_pdbs
-
+ 
         print(me.ensembles.values())
         print("Calculating hotspots...")
 
@@ -199,7 +211,7 @@ class EnsemblePipeline:
 
 if __name__ == "__main__":
     tempfile.tempdir = "/home/jin76872/Desktop/Mih/Data/tmp_superstar_ghecom"
-    ep = EnsemblePipeline("/home/jin76872/Desktop/Mih/Data/pipeline_dev/Bromodomains")
+    ep = EnsemblePipeline("/home/jin76872/Desktop/Mih/Data/ACS_fall_meeting_2019_slides")
     ep.run()
 
 

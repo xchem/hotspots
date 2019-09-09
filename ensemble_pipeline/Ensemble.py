@@ -52,19 +52,19 @@ class Ensemble:
         # Get correct bonding for the ligand
         p.detect_ligand_bonds()
 
-        # Eliminate ligands from other chains and binding sites.
-        for lig in p.ligands:
-            # Get the residues around the ligand (5 A radius).
-            lbs = Protein.BindingSiteFromMolecule(p, lig, 5)
-            try:
-                ligand_chains = list(set([r.identifier.split(":")[0] for r in lbs.residues]))
-
-            # CCDC API can fail here if the ligand is an aminoacid (eg in bromodomains), as it then looks for the amino acid in the protein sequence.
-            except IndexError:
-                continue
-            # If there is no overlap between the ligand chain and the target chains, remove the ligand.
-            if all(chain not in row["Chains"] for chain in ligand_chains):
-                p.remove_ligand(lig.identifier)
+        # # Eliminate ligands from other chains and binding sites.
+        # for lig in p.ligands:
+        #     # Get the residues around the ligand (5 A radius).
+        #     lbs = Protein.BindingSiteFromMolecule(p, lig, 5)
+        #     try:
+        #         ligand_chains = list(set([r.identifier.split(":")[0] for r in lbs.residues]))
+        #
+        #     # CCDC API can fail here if the ligand is an aminoacid (eg in bromodomains), as it then looks for the amino acid in the protein sequence.
+        #     except IndexError:
+        #         continue
+        #     # If there is no overlap between the ligand chain and the target chains, remove the ligand.
+        #     if all(chain not in row["Chains"] for chain in ligand_chains):
+        #         p.remove_ligand(lig.identifier)
 
         # Select the binding site residues
         resi = [r for r in p.residues if r.identifier in row["Binding site"]]
@@ -149,6 +149,7 @@ class EnsembleResult(Ensemble):
 
     def __init__(self, root_dir, ref_id, df, aligned=False):
         Ensemble.__init__(self, root_dir, ref_id)
+        print(ref_id)
         self.ensemble_ID = self.reference_ID["Ensemble ID"]  # Usually the target name
         self.protein_data = df  # pd Dataframe, output of SIENAReader or XChemReader
         self.ligand_data = None  # pd Dataframe, based on the ligands extracted from structures in protein_data
@@ -177,6 +178,22 @@ class EnsembleResult(Ensemble):
 
         return p_fname
 
+    def load_protein(self, row):
+        print("Getting protein {}".format(basename(row["Filename"])))
+        p = Protein.from_file(row["Filename"])
+
+        # Remove all chains we don't care about
+        print(row["Chains"])
+        for chain in p.chains:
+            if chain.identifier not in row["Chains"]:
+                p.remove_chain(chain.identifier)
+
+        # Get correct bonding for the ligand
+        p.detect_ligand_bonds()
+        p.identifier = "{}_{}".format(row["Ensemble ID"], row["ID"])
+        return p
+
+
     def align_ensemble(self, bs_list):
         """
         Aligns all elements of the ensemble to the reference structure
@@ -190,10 +207,14 @@ class EnsembleResult(Ensemble):
         e_ref_bs = self.reference_binding_site
 
         for bs in bs_list:
+            print(bs.identifier)
             chain_superposition = Protein.ChainSuperposition(self.alignment_settings)
-            (rmsd, transformation) = chain_superposition.superpose(e_ref_bs.protein.chains[0],
-                                                                   bs.protein.chains[0],
-                                                                   e_ref_bs)
+            try:
+                (rmsd, transformation) = chain_superposition.superpose(e_ref_bs.protein.chains[0],
+                                                                       bs.protein.chains[0], # change to bs.protein.chains[0] if using binding site
+                                                                       e_ref_bs)
+            except RuntimeError as e:
+                print("alignment failed for protein {}".format(bs.identifier))
             rmsd_list.append(rmsd)
 
         # Add RMSD column to the protein dataframe
@@ -208,6 +229,7 @@ class EnsembleResult(Ensemble):
         """
         # Load up the binding sites of the ensemble:
         bs_list = [self.get_binding_site(r) for idx, r in self.protein_data.iterrows()]
+        # bs_list = [self.load_protein(r) for idx, r in self.protein_data.iterrows()]
 
         if not self.aligned:
             bs_list = self.align_ensemble(bs_list)
@@ -217,7 +239,7 @@ class EnsembleResult(Ensemble):
         self.protein_data.to_csv(join(self.root_dir, "{}.csv".format(self.ensemble_ID)))
         return paths_list
 
-    def run_hotspots(self, paths_list, nrotations=100000, charged=False):
+    def run_hotspots(self, paths_list, nrotations=100000, charged=False, data_source="SIENA"):
         """
         :param int nrotations: how many probe rotations to do in the hotspots calculation. Supply in config file.
         :param bool charged: whether to use charged probes in the hotspots calculation. Supply in config file.
@@ -225,9 +247,9 @@ class EnsembleResult(Ensemble):
         """
 
         # Not the most intelligent use of Luigi, but will calculate a lot of hotspots very reliably.
-        luigi.build([ParalleliselRunner(paths_list, nrotations, charged)], local_scheduler=True, workers=30)
+        luigi.build([ParalleliselRunner(paths_list, nrotations, charged, data_source)], local_scheduler=True, workers=30)
         # TODO: see what happens in case luigi fails on some of these
-        hotspot_paths_list = [join(dirname(p), "fullsize_hotspots", "out.zip") for p in paths_list]
+        hotspot_paths_list = [join(dirname(p), "fullsize_hotspots_{}".format(nrotations), "out.zip") for p in paths_list]
 
         return hotspot_paths_list
 

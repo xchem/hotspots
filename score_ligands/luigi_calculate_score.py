@@ -136,10 +136,10 @@ class PipelineTask(luigi.WrapperTask):
 
 
 if __name__ == "__main__":
-    pname = "NUDT5"
-    stem= "/home/jin76872/Desktop/Mih/Data/NUDT5A/NUDT5A_fragment_hits"
-    res_dir = os.path.join(stem, "hotspot_results")
-    lchains = [["A", "B"], ["C", "D"]]
-    key = "bound"
+    pname = "PARP14"
+    stem= "/home/jin76872/Desktop/Mih/Data/PARP14/aligned_hotspot_maps/aligned_structures/"
+    res_dir = stem
+    lchains = ["A"]
+    #key = "bound"
     #nrot = 100000
-    luigi.build([PipelineTask(xstals_dir=stem, prot_name=pname, keyword=key, chains=lchains, hs_results_dir=res_dir)], local_scheduler=True, workers=20)
+    luigi.build([PipelineTask(xstals_dir=stem, prot_name=pname, keyword=None, chains=lchains, hs_results_dir=res_dir)], local_scheduler=True, workers=20)

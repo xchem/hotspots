@@ -1,12 +1,14 @@
 from __future__ import print_function, division
 from hotspots.grid_extension import Grid
 from glob import glob
+from os.path import join
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.feature_extraction.image import img_to_graph
 from sklearn.decomposition import PCA
 from sklearn.cluster import DBSCAN
+from hdbscan import HDBSCAN
 import pickle
 from decimal import Decimal
 from scipy.stats import ks_2samp
@@ -112,7 +114,7 @@ class GridEnsemble:
                                                          (self.relu(-origin_diff[1]), self.relu(far_diff[1])),
                                                          (self.relu(-origin_diff[2]), self.relu(far_diff[2])), (0, 0)),
                                         "constant", constant_values=0)
-                # Np.stack stacks along a new axis, but ensemble_array is alreasy 4D, so use np.append instead.
+                # Np.stack stacks along a new axis, but ensemble_array is already 4D, so use np.append instead.
                 # When using np.append, arrays have to be the same dimension, so we expand arr with an empty 4th dimension.
                 arr = np.expand_dims(arr, axis=3)
                 print(arr.shape, ensemble_array.shape)
@@ -131,7 +133,18 @@ class GridEnsemble:
         :param str path:
         :return: 
         """
-        pickle.dump(self, open(path), 'wb')
+        with open(path, "wb") as f:
+            pickle.dump(self, f)
+
+    @staticmethod
+    def load(path):
+        """
+        
+        :param path: path to pickled ensemble object
+        :return: 
+        """
+        ge = pickle.load(open(path, "r"))
+        return ge
 
     def save_grid(self, array):
         """
@@ -156,6 +169,66 @@ class GridEnsemble:
             grid._grid.set_value(int(i), int(j), int(k), v)
         return grid
 
+    def make_max_grid(self):
+        max_arr = np.max(self.ensemble_array, axis=-1)
+        max_g = self.save_grid(max_arr)
+        return max_g
+
+    def make_mean_grid(self):
+        mean_arr = np.mean(self.ensemble_array, axis=-1)
+        mean_g = self.save_grid(mean_arr)
+        return mean_g
+
+    def make_median_grid(self):
+        med_array = np.median(self.ensemble_array, axis=-1)
+        med_g = self.save_grid(med_array)
+        return med_g
+
+    def make_nonzero_median_map(self):
+        nan_arr = self.ensemble_array.copy()
+        nan_arr[nan_arr==0] = np.nan
+        med_map = np.nanmedian(nan_arr, axis=-1)
+        med_map = np.nan_to_num(med_map)
+        return med_map
+
+    def get_frequency_map(self):
+        return np.divide(np.count_nonzero(self.ensemble_array, axis=-1), float(self.ensemble_array.shape[-1])) * 100
+
+    def get_difference_frequency_map(self, other, threshold):
+        freq_map = self.get_frequency_map()
+        med_diff_map = self.make_nonzero_median_map() - other.make_nonzero_median_map()
+        thresh_med_map = med_diff_map * (freq_map > threshold)
+        return thresh_med_map
+
+    def get_median_frequency_map(self, threshold):
+        freq_map = self.get_frequency_map()
+        med_map = self.make_nonzero_median_map()
+        thresh_med_map = med_map * (freq_map > threshold)
+        return thresh_med_map
+
+    @staticmethod
+    def get_center_of_mass(array):
+        indices = array.nonzero()
+        vals = array[indices]
+        result_list = []
+        for dimension in indices:
+            result_list.append(np.average(dimension, weights=vals))
+        return result_list
+
+
+    def get_highest_percentile_scores(self, max_arr, percentile=90.0):
+        """
+        Returns a grid thresholded at the highest <percentile> of scores.
+        :param percentile: 
+        :return: 
+        """
+        # Get the max grid across the ensemble
+        #max_arr = np.max(self.ensemble_array, axis=-1)
+        max_vals = max_arr[max_arr.nonzero()]
+        perc = np.percentile(max_vals, percentile)
+        perc_arr = max_arr*(max_arr > perc)
+        return perc_arr
+
     def _plot_KS_histogram(self, dist1, dist2, tstring=""):
         """
         Plot histograms of the 2 distributions. 
@@ -169,6 +242,7 @@ class GridEnsemble:
         plt.title(tstring)
         plt.savefig(join(self.hist_out_dir, "{}.png".format(tstring)))
         plt.close()
+        # plt.show()
 
     def get_KS_scores(self, in_vals, threshold=2, plot=False):
         """
@@ -222,7 +296,8 @@ class GridEnsemble:
         ks = ks_2samp(positives, negatives)
         fstr = "KS stat: {}, pval: {}".format(ks[0], '%.3E'%Decimal(ks[1]))
         p_val = -np.log10(ks[1])
-        # d = ks[0]
+        # Fix the D statistic so that it takes into account sample size
+        d = ks[0]
 
         if plot:
             self._plot_KS_histogram(positives, negatives, fstr)
@@ -251,8 +326,31 @@ class GridEnsemble:
             else:
                 plot_idxs = np.where(k_mask & clust_mask)
                 ax.scatter(plot_idxs[0], plot_idxs[1], plot_idxs[2], c=col, s=14)
-                # ax.text(plot_idxs[0][0], plot_idxs[0][1], plot_idxs[0][2], '%s' % (str(k)), size=10, zorder=1, color='k')
+                ax.text(plot_idxs[0][0], plot_idxs[0][1], plot_idxs[0][2], '%s' % (str(k)), size=10, zorder=1, color='k')
         plt.show()
+
+    @staticmethod
+    def HDBSCAN_cluster(d_array, **kwargs):
+        """
+        
+        :param d_array: 
+        :param min_members: 
+        :return: 
+        """
+        clusterer = HDBSCAN(**kwargs)
+        in_arr = np.array(d_array.nonzero()).T
+
+        clusterer.fit(in_arr)
+        labels = clusterer.labels_
+
+        a = np.zeros(d_array.shape)
+        for clust, tup in zip(labels, in_arr):
+            if clust >= 0:
+                a[tuple(tup)] = clust + 1
+            else:
+                a[tuple(tup)] = clust
+        return a
+
 
 
     @staticmethod
@@ -324,7 +422,7 @@ class GridEnsemble:
         # v_list now contains the coordinates of all points in the island
         return v_list
 
-    def get_island_array(self, a):
+    def get_island_array(self, a, island_min_size=5):
         """
         Returns an array whose values show which cluster they belong to
         :param a: 
@@ -339,9 +437,10 @@ class GridEnsemble:
 
         while len(nonzero_a[0]) > 0:
             visited_list = self.island_find(a, np.array((nonzero_a[0][0], nonzero_a[1][0], nonzero_a[2][0])), [])
-            cluster_dict[counter] = visited_list
             # Update the nonzero list, because all the points in the visited cluster should have been set to zero.
             nonzero_a = np.nonzero(a)
+            cluster_dict[counter] = visited_list
+            print(counter)
             counter += 1
 
         # Returns an array whose values show which cluster they belong to.
@@ -374,15 +473,16 @@ class GridEnsemble:
 
         indices = np.transpose(diff_diff.nonzero()) # get the indices per value, rather than per dimension.
 
-        vals = difference_array[diff_diff.nonzero()] # vals is a 2D numpy array, containing the distributions of scores at each point from both ensembles.
+        on = arr1[diff_diff.nonzero()]
+        off = arr2[diff_diff.nonzero()]
 
         # idx_dict has the shape {(3D indices): Kolmogorov-Smirnov 2sample D-value}.
         idx_dict = {}
-        for (a, b, c), v in zip(indices, vals):
+        for (a, b, c), n, f in zip(indices, on, off):
             # Get all values within the radius specified by tolerance. Will be of shape (2*tol+1, 2*tol+1, 2*tol+1) , so flatten.
             sel = difference_array[a - tolerance: a + tolerance+1, b - tolerance: b + tolerance+1, c - tolerance: c + tolerance+1].flatten()
             # Get the Kolmogorov-Smirnov D statistic for the distributions at the sample
-            d = self.get_KS_scores(sel, plot=plot)
+            d = self.get_2_KS_scores((n, f), plot=plot)
             idx_dict[(a, b, c)] = d
 
         # Create an array of the modified D scores (can be used as clustering input).

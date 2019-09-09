@@ -54,7 +54,7 @@ function onerror(message) {
             var file_extension=f.name.split('.').pop()
             console.log(file_extension)
             //getBase64(file)
-            if (file_extension=='pdb'){
+            if (file_extension=='pdb'|| file_extension=='mol2' || file_extension == 'sdf'){
                 proteinRepresentation(f,loaded_promises)
             }else if (file_extension=='ccp4'){
                 gridRepresentation(f,loaded_promises)
@@ -74,7 +74,9 @@ function onerror(message) {
                 o.addRepresentation("cartoon", { color: "lightgrey" })
                 o.addRepresentation( "ball+stick", {
                     sele: "(( not polymer or hetero ) and not ( water or ion ))",
-                    scale: 0.5
+                    scale: 0.3,
+					multipleBond: 'symmetric',
+					bondSpacing: 1.0
                 } );
                 o.autoView()
                 return o;
@@ -110,7 +112,9 @@ function onerror(message) {
                     var colourscheme = "Purples"}
 
                 var properties = {thresholdType:'value',
-                thresholdMin: 0.000001,
+		thresholdMin:0.00001,
+		//thresholdMax:0.00001,
+                thresholdOut: false,
                 colorScheme:'value',
                 colorScale:colourscheme,
                 dotType:'sphere',
@@ -150,7 +154,7 @@ function onerror(message) {
                 isolevel: 14.00,
                 //wireframe: true,
                 //linewidth: 3,
-                opacity: 0.2
+                opacity: 0.1
                 };
              }
              else{
